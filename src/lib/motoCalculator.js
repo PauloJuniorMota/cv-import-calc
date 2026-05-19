@@ -101,82 +101,15 @@ export const EUROPEAN_COUNTRIES = [
 
 // ─── Segmentos de cilindrada ──────────────────────────────────────────────────
 export const DISPLACEMENT_SEGMENTS = [
-  {
-    id: 'micro',
-    label: '≤ 125 cc',
-    sublabel: 'Scooter / 125',
-    range: '≤125cc',
-    icon: '🛵',
-    // ICE fixo para 0–4 anos (ECV)
-    ice0_4: 100_000,
-    // ICE percentual sobre CIF para idades superiores
-    iceRates: [
-      { minAge: 5,  maxAge: 7,  pct: 0.15 },
-      { minAge: 8,  maxAge: 10, pct: 0.25 },
-      { minAge: 11, maxAge: 15, pct: 0.40 },
-      { minAge: 16, maxAge: 99, pct: 0.60 },
-    ],
-  },
-  {
-    id: 'small',
-    label: '126 – 300 cc',
-    sublabel: 'Mota entrada',
-    range: '126–300cc',
-    icon: '🏍️',
-    ice0_4: 150_000,
-    iceRates: [
-      { minAge: 5,  maxAge: 7,  pct: 0.20 },
-      { minAge: 8,  maxAge: 10, pct: 0.35 },
-      { minAge: 11, maxAge: 15, pct: 0.55 },
-      { minAge: 16, maxAge: 99, pct: 0.80 },
-    ],
-  },
-  {
-    id: 'medium',
-    label: '301 – 500 cc',
-    sublabel: 'Mota média',
-    range: '301–500cc',
-    icon: '🏍️',
-    ice0_4: 200_000,
-    iceRates: [
-      { minAge: 5,  maxAge: 7,  pct: 0.30 },
-      { minAge: 8,  maxAge: 10, pct: 0.50 },
-      { minAge: 11, maxAge: 15, pct: 0.70 },
-      { minAge: 16, maxAge: 99, pct: 1.00 },
-    ],
-  },
-  {
-    id: 'large',
-    label: '501 – 800 cc',
-    sublabel: 'Mota grande',
-    range: '501–800cc',
-    icon: '🏍️',
-    ice0_4: 250_000,
-    iceRates: [
-      { minAge: 5,  maxAge: 7,  pct: 0.40 },
-      { minAge: 8,  maxAge: 10, pct: 0.65 },
-      { minAge: 11, maxAge: 15, pct: 0.90 },
-      { minAge: 16, maxAge: 99, pct: 1.20 },
-    ],
-  },
-  {
-    id: 'xlarge',
-    label: '+ 800 cc',
-    sublabel: 'Big bike',
-    range: '>800cc',
-    icon: '🏍️',
-    ice0_4: 300_000,
-    iceRates: [
-      { minAge: 5,  maxAge: 7,  pct: 0.50 },
-      { minAge: 8,  maxAge: 10, pct: 0.80 },
-      { minAge: 11, maxAge: 15, pct: 1.10 },
-      { minAge: 16, maxAge: 99, pct: 1.50 },
-    ],
-  },
+  { id: 'micro',  label: '≤ 125 cc',     sublabel: 'Scooter / 125', range: '≤125cc',   icon: '🛵' },
+  { id: 'small',  label: '126 – 300 cc', sublabel: 'Mota entrada',  range: '126–300cc', icon: '🏍️' },
+  { id: 'medium', label: '301 – 500 cc', sublabel: 'Mota média',    range: '301–500cc', icon: '🏍️' },
+  { id: 'large',  label: '501 – 800 cc', sublabel: 'Mota grande',   range: '501–800cc', icon: '🏍️' },
+  { id: 'xlarge', label: '+ 800 cc',     sublabel: 'Big bike',      range: '>800cc',    icon: '🏍️' },
 ]
 
 // ─── Taxas fixas ──────────────────────────────────────────────────────────────
-export const MOTO_DI_RATE    = 0.20   // 20% do CIF
+export const MOTO_DI_RATE    = 0.30   // 30% do CIF (HS 8711 — pauta REMPE)
 export const MOTO_TC_RATE    = 0.005  // 0.5% do CIF
 export const MOTO_IVA_RATE   = 0.15   // 15%
 export const MOTO_INSURANCE_RATE = 0.01 // ~1% do valor
@@ -201,13 +134,9 @@ export function getCountry(code) {
   return EUROPEAN_COUNTRIES.find(c => c.code === code) || EUROPEAN_COUNTRIES[0]
 }
 
-export function getIceForMoto(segment, ageYears, cifECV) {
-  if (ageYears <= 4) {
-    return { ecv: segment.ice0_4, isFixed: true, pct: null }
-  }
-  const rate = segment.iceRates.find(r => ageYears >= r.minAge && ageYears <= r.maxAge)
-    || segment.iceRates[segment.iceRates.length - 1]
-  return { ecv: cifECV * rate.pct, isFixed: false, pct: rate.pct }
+// ICE para motociclos = isento pela pauta aduaneira (HS 8711)
+export function getIceForMoto() {
+  return { ecv: 0, isFixed: true, pct: null }
 }
 
 /**
@@ -245,13 +174,13 @@ export function calculateMotoImport({
   const tcECV = cifECV * MOTO_TC_RATE
   const tcLocal = tcECV / toECV
 
-  // ICE
-  const iceResult = getIceForMoto(segment, ageYears, cifECV)
-  const iceECV = iceResult.ecv
-  const iceLocal = iceECV / toECV
+  // ICE — isento para motociclos (HS 8711)
+  const iceResult = { ecv: 0, isFixed: true, pct: null }
+  const iceECV = 0
+  const iceLocal = 0
 
   // IVA
-  const ivaBaseECV = cifECV + diECV + tcECV + iceECV
+  const ivaBaseECV = cifECV + diECV + tcECV
   const ivaECV = ivaBaseECV * MOTO_IVA_RATE
   const ivaLocal = ivaECV / toECV
 
@@ -267,7 +196,7 @@ export function calculateMotoImport({
   const despachanteMidLocal = despachanteECV / toECV
 
   // Totais
-  const totalImpostosECV = diECV + tcECV + iceECV + ivaECV + teaECV
+  const totalImpostosECV = diECV + tcECV + ivaECV + teaECV
   const totalImpostosLocal = totalImpostosECV / toECV
 
   const totalSemDespachante = cifECV + totalImpostosECV

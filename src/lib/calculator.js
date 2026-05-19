@@ -14,25 +14,33 @@ export const USD_TO_ECV = 94.89
 
 /**
  * ICE — Imposto sobre Consumo Especial
- * Taxa específica por faixa etária do veículo (gasolina/gasóleo)
- * Valores em ECV (escudos cabo-verdianos)
- *
- * Nota: Para veículos 0–4 anos a taxa de 200.000$00 é confirmada por lei.
- * As faixas seguintes são baseadas no agravamento progressivo previsto na pauta.
+ * 0–4 anos: taxa fixa 100.000$; 5+ anos: percentagem sobre CIF
+ * Fonte: Pauta Aduaneira REMPE, HS 8703 (gasolina e gasóleo)
  */
 export const ICE_BRACKETS = [
-  { label: '0 – 4 anos',  minAge: 0,  maxAge: 4,  ecv: 200_000, confirmed: true },
-  { label: '5 – 7 anos',  minAge: 5,  maxAge: 7,  ecv: 300_000, confirmed: false },
-  { label: '8 – 10 anos', minAge: 8,  maxAge: 10, ecv: 450_000, confirmed: false },
-  { label: '11 – 15 anos',minAge: 11, maxAge: 15, ecv: 600_000, confirmed: false },
-  { label: '+ 15 anos',   minAge: 16, maxAge: 99, ecv: 800_000, confirmed: false },
+  { label: '0 – 4 anos',  minAge: 0,  maxAge: 4,  ecv: 100_000, isFixed: true,  pct: null, confirmed: true },
+  { label: '5 – 6 anos',  minAge: 5,  maxAge: 6,  ecv: null,    isFixed: false, pct: 0.40, confirmed: true },
+  { label: '7 – 10 anos', minAge: 7,  maxAge: 10, ecv: null,    isFixed: false, pct: 0.80, confirmed: true },
+  { label: '+ 10 anos',   minAge: 11, maxAge: 99, ecv: null,    isFixed: false, pct: 1.50, confirmed: true },
 ]
 
 /**
- * Direito de Importação — taxa sobre valor CIF
- * Automóveis de passageiros (HS 8703) — regime geral
+ * Direito de Importação — varia por combustível e cilindrada (HS 8703)
+ * Fonte: Pauta Aduaneira REMPE
  */
-export const DI_RATE = 0.20  // 20% do CIF
+export const CAR_DI_RATES = {
+  gasolina: [
+    { label: '≤ 1.000 cc',        maxCC: 1000,  rate: 0.20 },
+    { label: '1.001 – 1.500 cc',  maxCC: 1500,  rate: 0.30 },
+    { label: '1.501 – 3.000 cc',  maxCC: 3000,  rate: 0.40 },
+    { label: '> 3.000 cc',        maxCC: 99999, rate: 0.50 },
+  ],
+  diesel: [
+    { label: '≤ 1.500 cc',        maxCC: 1500,  rate: 0.30 },
+    { label: '1.501 – 2.500 cc',  maxCC: 2500,  rate: 0.40 },
+    { label: '> 2.500 cc',        maxCC: 99999, rate: 0.50 },
+  ],
+}
 
 /**
  * IVA — Imposto sobre o Valor Acrescentado
@@ -92,7 +100,7 @@ export function getIceBracket(ageYears) {
  * @param {number} [params.exchangeRate]  - Taxa de câmbio USD→ECV (default: 103.7)
  * @returns {Object} Todos os valores calculados
  */
-export function calculateImport({ carValueUSD, freightUSD, carYear, exchangeRate = USD_TO_ECV }) {
+export function calculateImport({ carValueUSD, freightUSD, carYear, exchangeRate = USD_TO_ECV, fuelType = 'gasolina', engineCC = 3000 }) {
   const currentYear = new Date().getFullYear()
   const ageYears = currentYear - carYear
 
@@ -101,17 +109,20 @@ export function calculateImport({ carValueUSD, freightUSD, carYear, exchangeRate
   const cifUSD = carValueUSD + freightUSD + insuranceUSD
   const cifECV = cifUSD * exchangeRate
 
-  // — Direito de Importação —
-  const diECV = cifECV * DI_RATE
+  // — Direito de Importação — varia por combustível e cilindrada
+  const diBrackets = CAR_DI_RATES[fuelType] || CAR_DI_RATES.gasolina
+  const diBracket = diBrackets.find(b => engineCC <= b.maxCC) || diBrackets[diBrackets.length - 1]
+  const diRate = diBracket.rate
+  const diECV = cifECV * diRate
   const diUSD = diECV / exchangeRate
 
   // — TC (Taxa de Chancelaria) —
   const tcECV = cifECV * TC_RATE
   const tcUSD = tcECV / exchangeRate
 
-  // — ICE —
+  // — ICE — 0-4 anos: taxa fixa; 5+ anos: % do CIF
   const iceBracket = getIceBracket(ageYears)
-  const iceECV = iceBracket.ecv
+  const iceECV = iceBracket.isFixed ? iceBracket.ecv : cifECV * iceBracket.pct
   const iceUSD = iceECV / exchangeRate
 
   // — IVA —
@@ -153,7 +164,8 @@ export function calculateImport({ carValueUSD, freightUSD, carYear, exchangeRate
     // DI
     diECV,
     diUSD,
-    diRate: DI_RATE,
+    diRate,
+    diBracket,
 
     // TC
     tcECV,

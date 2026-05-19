@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import {
   calculateImport, formatECV as formatECVCar, formatUSD,
-  ICE_BRACKETS, USD_TO_ECV
+  ICE_BRACKETS, USD_TO_ECV, CAR_DI_RATES
 } from './lib/calculator'
 import {
   calculateMotoImport, formatECV, formatLocal,
@@ -154,7 +154,7 @@ function BarBreakdown({ segments, totalECV }) {
 }
 
 // ─── ICE Tables ────────────────────────────────────────────────────────────
-function IceTableCar({ currentAge }) {
+function IceTableCar({ currentAge, cifECV }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="mt-4 rounded-xl border border-[#1a2235] overflow-hidden">
@@ -165,53 +165,24 @@ function IceTableCar({ currentAge }) {
       {open && <div className="divide-y divide-[#111827]">
         {ICE_BRACKETS.map(b => {
           const active = currentAge >= b.minAge && currentAge <= b.maxAge
+          const iceVal = b.isFixed ? b.ecv : (cifECV ? cifECV * b.pct : null)
           return (
             <div key={b.label} className={cn('flex items-center justify-between px-4 py-2.5 text-xs font-mono', active?'bg-[#1d3a6e]/30 text-[#60a5fa]':'bg-[#07090f] text-[#4a5a7a]')}>
               <div className="flex items-center gap-2">
-                <div className={cn('w-1.5 h-1.5 rounded-full', active?'bg-[#3b82f6]':'bg-[#1a2235]')}/><span>{b.label}</span>
-                {!b.confirmed && <span className="text-[#2d3d55] text-[10px]">est.</span>}
+                <div className={cn('w-1.5 h-1.5 rounded-full', active?'bg-[#3b82f6]':'bg-[#1a2235]')}/>
+                <span>{b.label}</span>
+                {!b.isFixed && <span className="text-[#334155] text-[10px]">({(b.pct*100).toFixed(0)}% CIF)</span>}
               </div>
               <div className="flex items-center gap-3">
-                <span className={active?'text-[#3b82f6]':'text-[#334155]'}>{formatUSD(b.ecv/USD_TO_ECV)}</span>
-                <span className={active?'font-semibold text-[#60a5fa]':''}>{formatECVCar(b.ecv)}</span>
+                {iceVal != null
+                  ? <><span className={active?'text-[#3b82f6]':'text-[#334155]'}>{formatUSD(iceVal/USD_TO_ECV)}</span>
+                       <span className={active?'font-semibold text-[#60a5fa]':''}>{formatECVCar(iceVal)}</span></>
+                  : <span className="text-[#2d3d55]">{(b.pct*100).toFixed(0)}% do CIF</span>
+                }
               </div>
             </div>
           )
         })}
-      </div>}
-    </div>
-  )
-}
-
-function IceTableMoto({ segment, ageYears, cifECV }) {
-  const [open, setOpen] = useState(false)
-  if (!segment) return null
-  const rows = [
-    { label:'0 – 4 anos (taxa fixa)', ice:segment.ice0_4, isFixed:true, active:ageYears<=4 },
-    ...segment.iceRates.map(r => ({
-      label: r.maxAge>=99?`+${r.minAge} anos`:`${r.minAge} – ${r.maxAge} anos`,
-      ice: cifECV>0?cifECV*r.pct:null, pct:r.pct, isFixed:false,
-      active: ageYears>4 && ageYears>=r.minAge && ageYears<=r.maxAge
-    }))
-  ]
-  return (
-    <div className="mt-4 rounded-xl border border-[#1a2235] overflow-hidden">
-      <button onClick={() => setOpen(v=>!v)} className="w-full flex items-center justify-between px-4 py-3 bg-[#0d1117] hover:bg-[#111827] transition-colors">
-        <span className="text-xs font-mono tracking-widest text-[#4a5a7a] uppercase">Tabela ICE — {segment.label}</span>
-        <ChevronDown size={14} className={cn('text-[#4a5a7a] transition-transform', open&&'rotate-180')}/>
-      </button>
-      {open && <div className="divide-y divide-[#111827]">
-        {rows.map((row,i) => (
-          <div key={i} className={cn('flex items-center justify-between px-4 py-2.5 text-xs font-mono', row.active?'bg-[#1d3a6e]/30 text-[#60a5fa]':'bg-[#07090f] text-[#4a5a7a]')}>
-            <div className="flex items-center gap-2">
-              <div className={cn('w-1.5 h-1.5 rounded-full', row.active?'bg-[#3b82f6]':'bg-[#1a2235]')}/><span>{row.label}</span>
-              {!row.isFixed && <span className="text-[#334155]">({(row.pct*100).toFixed(0)}% CIF)</span>}
-            </div>
-            <span className={row.active?'font-semibold':''}>
-              {row.isFixed ? formatECV(row.ice) : row.ice ? formatECV(row.ice) : `${(row.pct*100).toFixed(0)}% do CIF`}
-            </span>
-          </div>
-        ))}
       </div>}
     </div>
   )
@@ -226,6 +197,8 @@ function CarCalculator() {
   const [carValue, setCarValue] = useState('')
   const [freight, setFreight] = useState('')
   const [carYear, setCarYear] = useState(CURRENT_YEAR - 2)
+  const [fuelType, setFuelType] = useState('gasolina')
+  const [engineCC, setEngineCC] = useState(3000)
   const [exchangeRate, setExchangeRate] = useState(USD_TO_ECV)
   const [showAdv, setShowAdv] = useState(false)
   const [valoresAdicionais, setValoresAdicionais] = useState('')
@@ -236,18 +209,18 @@ function CarCalculator() {
   const R = useMemo(() => {
     const cv=parseFloat(carValue), fr=parseFloat(freight)
     if(!cv||!fr||cv<=0||fr<=0) return null
-    return calculateImport({carValueUSD:cv,freightUSD:fr,carYear,exchangeRate})
-  }, [carValue,freight,carYear,exchangeRate])
+    return calculateImport({carValueUSD:cv,freightUSD:fr,carYear,exchangeRate,fuelType,engineCC})
+  }, [carValue,freight,carYear,exchangeRate,fuelType,engineCC])
 
   const age = CURRENT_YEAR - carYear
   const vAdicECV = parseFloat(valoresAdicionais) || 0
 
   function calc() { if(!R) return; setDone(true); setTimeout(()=>ref.current?.scrollIntoView({behavior:'smooth',block:'start'}),100) }
-  function reset() { setCarValue('');setFreight('');setCarYear(CURRENT_YEAR-2);setExchangeRate(USD_TO_ECV);setDone(false);setValoresAdicionais('') }
+  function reset() { setCarValue('');setFreight('');setCarYear(CURRENT_YEAR-2);setFuelType('gasolina');setEngineCC(3000);setExchangeRate(USD_TO_ECV);setDone(false);setValoresAdicionais('') }
 
   const chartSegs = R ? [
     {label:'Veículo + Frete + Seguro', ecv:R.cifECV, color:'#3b82f6'},
-    {label:'Dir. Importação (20%)', ecv:R.diECV, color:'#8b5cf6'},
+    {label:`Dir. Importação (${(R.diRate*100).toFixed(0)}%)`, ecv:R.diECV, color:'#8b5cf6'},
     {label:'TC (0.5% CIF)', ecv:R.tcECV, color:'#06b6d4'},
     {label:`ICE (${R.iceBracket.label})`, ecv:R.iceECV, color:'#ef4444'},
     {label:'IVA (15%)', ecv:R.ivaECV, color:'#f59e0b'},
@@ -266,6 +239,26 @@ function CarCalculator() {
           <div>
             <Label htmlFor="fr"><Ship size={10} className="inline mr-1"/>Frete Internacional</Label>
             <NumberInput id="fr" value={freight} onChange={e=>setFreight(e.target.value)} placeholder="800" prefix="$" suffix="USD" min={100}/>
+          </div>
+          <div>
+            <Label><Gauge size={10} className="inline mr-1"/>Tipo de Motor</Label>
+            <div className="flex gap-2 mb-2.5">
+              {[{id:'gasolina',label:'⛽ Gasolina',defCC:3000},{id:'diesel',label:'🛢 Gasóleo',defCC:2500}].map(f=>(
+                <button key={f.id} onClick={()=>{setFuelType(f.id);setEngineCC(f.defCC)}}
+                  className={cn('flex-1 rounded-lg py-2 text-xs font-mono transition-all border',
+                    fuelType===f.id
+                      ? 'bg-[#1d3a6e]/60 border-[#2563eb]/40 text-[#60a5fa]'
+                      : 'bg-[#07090f] border-[#1a2235] text-[#4a5a7a] hover:border-[#334155]')}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <select value={engineCC} onChange={e=>setEngineCC(Number(e.target.value))}
+              className="w-full rounded-lg bg-[#07090f] border border-[#1a2235] text-[#c4cfdf] text-xs font-mono px-3 py-2.5 focus:outline-none focus:border-[#2563eb] cursor-pointer">
+              {CAR_DI_RATES[fuelType].map(b=>(
+                <option key={b.maxCC} value={b.maxCC}>{b.label} — DI {(b.rate*100).toFixed(0)}%</option>
+              ))}
+            </select>
           </div>
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -305,7 +298,7 @@ function CarCalculator() {
             {done && <button onClick={reset} className="rounded-xl px-4 border border-[#1a2235] text-[#4a5a7a] hover:text-[#64748b] transition-all"><RefreshCw size={14}/></button>}
           </div>
         </div>
-        {R && <IceTableCar currentAge={age}/>}
+        {R && <IceTableCar currentAge={age} cifECV={R.cifECV}/>}
         <div className="rounded-xl border border-[#f59e0b]/20 bg-[#78350f]/10 p-4">
           <div className="flex gap-3">
             <AlertTriangle size={14} className="text-[#fbbf24] flex-shrink-0 mt-0.5"/>
@@ -356,9 +349,9 @@ function CarCalculator() {
                   <ResultRow icon={Wallet} label="Seguro (~1%)"          local={formatUSD(R.insuranceUSD)} ecv={formatECVCar(R.insuranceUSD*R.exchangeRate)} delay={100}/>
                   <SubtotalRow label="Valor CIF" local={formatUSD(R.cifUSD)} ecv={formatECVCar(R.cifECV)}/>
                   <SectionLabel n="02">Impostos Aduaneiros</SectionLabel>
-                  <ResultRow icon={Landmark}   label="Direito Importação (DI)"  note="20% CIF"                variant="blue"  local={formatUSD(R.diUSD)}  ecv={formatECVCar(R.diECV)}  delay={150}/>
+                  <ResultRow icon={Landmark}   label="Direito Importação (DI)"  note={`${(R.diRate*100).toFixed(0)}% CIF`}       variant="blue"  local={formatUSD(R.diUSD)}  ecv={formatECVCar(R.diECV)}  delay={150}/>
                   <ResultRow icon={TrendingUp} label="TC — Taxa de Chancelaria"   note="0.5% CIF"               variant="blue"  local={formatUSD(R.tcUSD)}  ecv={formatECVCar(R.tcECV)}  delay={175}/>
-                  <ResultRow icon={TrendingUp} label={`ICE — ${R.iceBracket.label}`} note={R.iceBracket.confirmed?'✓ lei':'est.'} variant="red"   local={formatUSD(R.iceUSD)} ecv={formatECVCar(R.iceECV)} delay={200}/>
+                  <ResultRow icon={TrendingUp} label={`ICE — ${R.iceBracket.label}`} note={R.iceBracket.isFixed ? '100.000$' : `${(R.iceBracket.pct*100).toFixed(0)}% CIF`} variant="red"   local={formatUSD(R.iceUSD)} ecv={formatECVCar(R.iceECV)} delay={200}/>
                   <ResultRow icon={Receipt}    label="IVA"                       note="15%×(CIF+DI+TC+ICE)"  variant="amber" local={formatUSD(R.ivaUSD)}  ecv={formatECVCar(R.ivaECV)}  delay={250}/>
                   <ResultRow icon={FileText}   label="Taxa Estatística (TEA)"                                 variant="default" local={formatUSD(R.teaUSD)} ecv={formatECVCar(R.teaECV)} delay={300}/>
                   <SubtotalRow label="Total Impostos" local={formatUSD(R.totalImpostosUSD)} ecv={formatECVCar(R.totalImpostosECV)}/>
@@ -428,9 +421,8 @@ function MotoCalculator() {
 
   const chartSegs = R ? [
     {label:'Mota + Frete + Seguro', ecv:R.cifECV, color:'#10b981'},
-    {label:'Dir. Importação (20%)', ecv:R.diECV, color:'#8b5cf6'},
+    {label:`Dir. Importação (${(R.diRate*100).toFixed(0)}%)`, ecv:R.diECV, color:'#8b5cf6'},
     {label:'TC (0.5% CIF)', ecv:R.tcECV, color:'#06b6d4'},
-    {label:`ICE (${segment.label})`, ecv:R.iceECV, color:'#ef4444'},
     {label:'IVA (15%)', ecv:R.ivaECV, color:'#f59e0b'},
     {label:'TEA + Despachante', ecv:R.teaECV+R.despachanteMidECV, color:'#3b82f6'},
     ...(vAdicECV>0 ? [{label:'Emolumentos / Portuários', ecv:vAdicECV, color:'#f43f5e'}] : []),
@@ -549,14 +541,10 @@ function MotoCalculator() {
           </div>
         </div>
 
-        {R && <IceTableMoto segment={segment} ageYears={age} cifECV={R.cifECV}/>}
         <div className="rounded-xl border border-[#f59e0b]/20 bg-[#78350f]/10 p-4">
           <div className="flex gap-3">
             <AlertTriangle size={14} className="text-[#fbbf24] flex-shrink-0 mt-0.5"/>
-            <div className="text-xs text-[#9ca3a8] leading-relaxed space-y-1">
-              <p><span className="text-[#fbbf24] font-medium">ICE por cilindrada:</span> Taxas para 5+ anos são estimativas — confirmar com despachante.</p>
-              <p className="text-[#4a5a7a]">Livrete original obrigatório. Reino Unido e Suíça exigem documentação extra de exportação.</p>
-            </div>
+            <p className="text-xs text-[#9ca3a8] leading-relaxed"><span className="text-[#fbbf24] font-medium">Nota:</span> Livrete original obrigatório. Reino Unido e Suíça exigem documentação extra de exportação.</p>
           </div>
         </div>
       </div>
@@ -608,11 +596,10 @@ function MotoCalculator() {
                   <ResultRow icon={Wallet} label="Seguro (~1%)"        local={fmtL(R.insuranceLocal)}      ecv={formatECV(R.insuranceLocal*R.toECV)}        delay={100}/>
                   <SubtotalRow label="Valor CIF" local={fmtL(R.cifLocal)} ecv={formatECV(R.cifECV)}/>
                   <SectionLabel n="02">Impostos Aduaneiros</SectionLabel>
-                  <ResultRow icon={Landmark}   label="Direito Importação (DI)" note="20% CIF"                                     variant="blue"    local={fmtL(R.diLocal)}          ecv={formatECV(R.diECV)}  delay={150}/>
+                  <ResultRow icon={Landmark}   label="Direito Importação (DI)" note={`${(R.diRate*100).toFixed(0)}% CIF`}                               variant="blue"    local={fmtL(R.diLocal)}          ecv={formatECV(R.diECV)}  delay={150}/>
                   <ResultRow icon={TrendingUp} label="TC — Taxa de Chancelaria"  note="0.5% CIF"                                     variant="blue"    local={fmtL(R.tcLocal)}          ecv={formatECV(R.tcECV)}  delay={175}/>
-                  <ResultRow icon={TrendingUp} label={`ICE — ${segment.label}`} note={R.iceResult.isFixed?'taxa fixa':`${((R.iceResult.pct||0)*100).toFixed(0)}% CIF`} variant="red"  local={fmtL(R.iceLocal)}  ecv={formatECV(R.iceECV)} delay={200}/>
-                  <ResultRow icon={Receipt}    label="IVA"                      note="15%×(CIF+DI+TC+ICE)"                         variant="amber"   local={fmtL(R.ivaLocal)}         ecv={formatECV(R.ivaECV)} delay={250}/>
-                  <ResultRow icon={FileText}   label="Taxa Estatística (TEA)"                                                     variant="default" local={fmtL(R.teaLocal)}         ecv={formatECV(R.teaECV)} delay={300}/>
+                  <ResultRow icon={Receipt}    label="IVA"                      note="15%×(CIF+DI+TC)"                               variant="amber"   local={fmtL(R.ivaLocal)}         ecv={formatECV(R.ivaECV)} delay={200}/>
+                  <ResultRow icon={FileText}   label="Taxa Estatística (TEA)"                                                     variant="default" local={fmtL(R.teaLocal)}         ecv={formatECV(R.teaECV)} delay={250}/>
                   <SubtotalRow label="Total Impostos" local={fmtL(R.totalImpostosLocal)} ecv={formatECV(R.totalImpostosECV)}/>
                   <SectionLabel n="03">Serviços</SectionLabel>
                   <ResultRow icon={FileText} label="Honorários Despachante" note={dispId==='micro'?'≤125cc→1.000$':'>125cc→2.000$'} variant="green" local={fmtL(R.despachanteMidLocal)} ecv={formatECV(R.despachanteMidECV)} delay={350}/>
