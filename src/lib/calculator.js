@@ -10,7 +10,7 @@
  * Câmbio de referência: 1 USD = 103.7 ECV (fixado ao EUR: 1 EUR = 110.265 ECV)
  */
 
-export const USD_TO_ECV = 103.7
+export const USD_TO_ECV = 94.89
 
 /**
  * ICE — Imposto sobre Consumo Especial
@@ -39,6 +39,24 @@ export const DI_RATE = 0.20  // 20% do CIF
  * Calculado sobre (CIF + DI + ICE)
  */
 export const IVA_RATE = 0.15  // 15%
+
+/**
+ * Taxa de Chancelaria (TC)
+ * 0.5% do CIF
+ */
+export const TC_RATE = 0.005
+
+/**
+ * Honorários do Despachante — tabela de honorários oficial
+ * - CIF ≤ 500.000 ECV  → 3.500 ECV
+ * - CIF ≤ 1.000.000 ECV → 5.000 ECV
+ * - CIF > 1.000.000 ECV → CIF × 0.5%
+ */
+export function calculateDespachante(cifECV) {
+  if (cifECV <= 500_000) return 3_500
+  if (cifECV <= 1_000_000) return 5_000
+  return cifECV * 0.005
+}
 
 /**
  * Taxa Estatística Aduaneira
@@ -87,13 +105,17 @@ export function calculateImport({ carValueUSD, freightUSD, carYear, exchangeRate
   const diECV = cifECV * DI_RATE
   const diUSD = diECV / exchangeRate
 
+  // — TC (Taxa de Chancelaria) —
+  const tcECV = cifECV * TC_RATE
+  const tcUSD = tcECV / exchangeRate
+
   // — ICE —
   const iceBracket = getIceBracket(ageYears)
   const iceECV = iceBracket.ecv
   const iceUSD = iceECV / exchangeRate
 
   // — IVA —
-  const ivaBaseECV = cifECV + diECV + iceECV
+  const ivaBaseECV = cifECV + diECV + tcECV + iceECV
   const ivaECV = ivaBaseECV * IVA_RATE
   const ivaUSD = ivaECV / exchangeRate
 
@@ -102,13 +124,14 @@ export function calculateImport({ carValueUSD, freightUSD, carYear, exchangeRate
   const teaUSD = teaECV / exchangeRate
 
   // — Despachante —
-  const despachanteMinECV = DESPACHANTE_MIN_ECV
-  const despachanteMidECV = (DESPACHANTE_MIN_ECV + DESPACHANTE_MAX_ECV) / 2
-  const despachanteMaxECV = DESPACHANTE_MAX_ECV
-  const despachanteMidUSD = despachanteMidECV / exchangeRate
+  const despachanteECV = calculateDespachante(cifECV)
+  const despachanteMinECV = despachanteECV
+  const despachanteMidECV = despachanteECV
+  const despachanteMaxECV = despachanteECV
+  const despachanteMidUSD = despachanteECV / exchangeRate
 
   // — Totais —
-  const totalImpostosECV = diECV + iceECV + ivaECV + teaECV
+  const totalImpostosECV = diECV + tcECV + iceECV + ivaECV + teaECV
   const totalImpostosUSD = totalImpostosECV / exchangeRate
 
   const totalSemDespachante = (carValueUSD + freightUSD + insuranceUSD) * exchangeRate + totalImpostosECV
@@ -131,6 +154,11 @@ export function calculateImport({ carValueUSD, freightUSD, carYear, exchangeRate
     diECV,
     diUSD,
     diRate: DI_RATE,
+
+    // TC
+    tcECV,
+    tcUSD,
+    tcRate: TC_RATE,
 
     // ICE
     iceBracket,

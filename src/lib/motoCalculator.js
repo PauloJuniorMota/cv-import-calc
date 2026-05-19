@@ -177,11 +177,19 @@ export const DISPLACEMENT_SEGMENTS = [
 
 // ─── Taxas fixas ──────────────────────────────────────────────────────────────
 export const MOTO_DI_RATE    = 0.20   // 20% do CIF
+export const MOTO_TC_RATE    = 0.005  // 0.5% do CIF
 export const MOTO_IVA_RATE   = 0.15   // 15%
 export const MOTO_INSURANCE_RATE = 0.01 // ~1% do valor
 export const MOTO_TEA_ECV    = 5_500
-export const MOTO_DESPACHANTE_MIN = 15_000
-export const MOTO_DESPACHANTE_MAX = 22_000
+
+/**
+ * Honorários do Despachante para motos — tabela oficial
+ * - Até 250 cc (micro: ≤125cc) → 1.000$
+ * - Superior a 250 cc               → 2.000$
+ */
+export function calculateMotoDespachante(displacementId) {
+  return displacementId === 'micro' ? 1_000 : 2_000
+}
 
 // ─── Funções auxiliares ───────────────────────────────────────────────────────
 
@@ -233,13 +241,17 @@ export function calculateMotoImport({
   const diECV = cifECV * MOTO_DI_RATE
   const diLocal = diECV / toECV
 
+  // TC (Taxa de Chancelaria)
+  const tcECV = cifECV * MOTO_TC_RATE
+  const tcLocal = tcECV / toECV
+
   // ICE
   const iceResult = getIceForMoto(segment, ageYears, cifECV)
   const iceECV = iceResult.ecv
   const iceLocal = iceECV / toECV
 
   // IVA
-  const ivaBaseECV = cifECV + diECV + iceECV
+  const ivaBaseECV = cifECV + diECV + tcECV + iceECV
   const ivaECV = ivaBaseECV * MOTO_IVA_RATE
   const ivaLocal = ivaECV / toECV
 
@@ -248,13 +260,14 @@ export function calculateMotoImport({
   const teaLocal = teaECV / toECV
 
   // Despachante
-  const despachanteMinECV = MOTO_DESPACHANTE_MIN
-  const despachanteMidECV = (MOTO_DESPACHANTE_MIN + MOTO_DESPACHANTE_MAX) / 2
-  const despachanteMaxECV = MOTO_DESPACHANTE_MAX
-  const despachanteMidLocal = despachanteMidECV / toECV
+  const despachanteECV = calculateMotoDespachante(displacementId)
+  const despachanteMinECV = despachanteECV
+  const despachanteMidECV = despachanteECV
+  const despachanteMaxECV = despachanteECV
+  const despachanteMidLocal = despachanteECV / toECV
 
   // Totais
-  const totalImpostosECV = diECV + iceECV + ivaECV + teaECV
+  const totalImpostosECV = diECV + tcECV + iceECV + ivaECV + teaECV
   const totalImpostosLocal = totalImpostosECV / toECV
 
   const totalSemDespachante = cifECV + totalImpostosECV
@@ -271,6 +284,9 @@ export function calculateMotoImport({
 
     // DI
     diECV, diLocal, diRate: MOTO_DI_RATE,
+
+    // TC
+    tcECV, tcLocal, tcRate: MOTO_TC_RATE,
 
     // ICE
     iceECV, iceLocal, iceResult,
