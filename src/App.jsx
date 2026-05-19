@@ -228,6 +228,8 @@ function CarCalculator() {
   const [carYear, setCarYear] = useState(CURRENT_YEAR - 2)
   const [exchangeRate, setExchangeRate] = useState(USD_TO_ECV)
   const [showAdv, setShowAdv] = useState(false)
+  const [useCustomDespachante, setUseCustomDespachante] = useState(false)
+  const [customDespachantePercent, setCustomDespachantePercent] = useState('2')
   const [done, setDone] = useState(false)
   const [tab, setTab] = useState('breakdown')
   const ref = useRef(null)
@@ -238,17 +240,31 @@ function CarCalculator() {
     return calculateImport({carValueUSD:cv,freightUSD:fr,carYear,exchangeRate})
   }, [carValue,freight,carYear,exchangeRate])
 
+  const D = useMemo(() => {
+    if (!R) return null
+    if (useCustomDespachante) {
+      const pct = parseFloat(customDespachantePercent)
+      if (pct > 0) {
+        const ecv = R.cifECV * (pct / 100)
+        const usd = ecv / R.exchangeRate
+        const total = R.totalSemDespachante + ecv
+        return { despachanteMinECV: ecv, despachanteMidECV: ecv, despachanteMaxECV: ecv, despachanteMidUSD: usd, totalComDespachante: total, totalComDespachanteUSD: total / R.exchangeRate, customPct: pct }
+      }
+    }
+    return { despachanteMinECV: R.despachanteMinECV, despachanteMidECV: R.despachanteMidECV, despachanteMaxECV: R.despachanteMaxECV, despachanteMidUSD: R.despachanteMidUSD, totalComDespachante: R.totalComDespachante, totalComDespachanteUSD: R.totalComDespachanteUSD, customPct: null }
+  }, [R, useCustomDespachante, customDespachantePercent])
+
   const age = CURRENT_YEAR - carYear
 
   function calc() { if(!R) return; setDone(true); setTimeout(()=>ref.current?.scrollIntoView({behavior:'smooth',block:'start'}),100) }
-  function reset() { setCarValue('');setFreight('');setCarYear(CURRENT_YEAR-2);setExchangeRate(USD_TO_ECV);setDone(false) }
+  function reset() { setCarValue('');setFreight('');setCarYear(CURRENT_YEAR-2);setExchangeRate(USD_TO_ECV);setDone(false);setUseCustomDespachante(false);setCustomDespachantePercent('2') }
 
-  const chartSegs = R ? [
+  const chartSegs = R && D ? [
     {label:'Veículo + Frete + Seguro', ecv:R.cifECV, color:'#3b82f6'},
     {label:'Dir. Importação (20%)', ecv:R.diECV, color:'#8b5cf6'},
     {label:`ICE (${R.iceBracket.label})`, ecv:R.iceECV, color:'#ef4444'},
     {label:'IVA (15%)', ecv:R.ivaECV, color:'#f59e0b'},
-    {label:'TEA + Despachante', ecv:R.teaECV+R.despachanteMidECV, color:'#10b981'},
+    {label:'TEA + Despachante', ecv:R.teaECV+D.despachanteMidECV, color:'#10b981'},
   ] : []
 
   return (
@@ -283,10 +299,28 @@ function CarCalculator() {
             <button onClick={()=>setShowAdv(v=>!v)} className="flex items-center gap-2 text-xs font-mono text-[#334155] hover:text-[#4a5a7a] transition-colors">
               <ChevronDown size={12} className={cn('transition-transform',showAdv&&'rotate-180')}/> Opções avançadas
             </button>
-            {showAdv && <div className="mt-4 pt-4 border-t border-[#111827] animate-fade-up">
-              <Label htmlFor="ex"><TrendingUp size={10} className="inline mr-1"/>Câmbio USD → ECV</Label>
-              <NumberInput id="ex" value={exchangeRate} onChange={e=>setExchangeRate(parseFloat(e.target.value)||USD_TO_ECV)} step={0.1} min={90} max={130} suffix="ECV"/>
-              <p className="mt-1.5 text-[10px] font-mono text-[#2d3d55]">Padrão: 103.7 (fixado ao EUR)</p>
+            {showAdv && <div className="mt-4 pt-4 border-t border-[#111827] animate-fade-up space-y-4">
+              <div>
+                <Label htmlFor="ex"><TrendingUp size={10} className="inline mr-1"/>Câmbio USD → ECV</Label>
+                <NumberInput id="ex" value={exchangeRate} onChange={e=>setExchangeRate(parseFloat(e.target.value)||USD_TO_ECV)} step={0.1} min={90} max={130} suffix="ECV"/>
+                <p className="mt-1.5 text-[10px] font-mono text-[#2d3d55]">Padrão: 103.7 (fixado ao EUR)</p>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <Label><FileText size={10} className="inline mr-1"/>Honorários Despachante</Label>
+                  <button onClick={()=>setUseCustomDespachante(v=>!v)} className={cn('text-[10px] font-mono transition-colors',useCustomDespachante?'text-[#34d399]':'text-[#334155] hover:text-[#4a5a7a]')}>
+                    {useCustomDespachante?'← usar estimativa':'% manual →'}
+                  </button>
+                </div>
+                {useCustomDespachante
+                  ? <><NumberInput id="dp" value={customDespachantePercent} onChange={e=>setCustomDespachantePercent(e.target.value)} placeholder="2" step={0.1} min={0.1} max={20} suffix="%"/>
+                     <p className="mt-1.5 text-[10px] font-mono text-[#2d3d55]">% aplicada sobre o valor CIF</p></>
+                  : <div className="rounded-xl bg-[#07090f] border border-[#1a2235] px-4 py-3 flex items-center justify-between">
+                      <span className="text-xs text-[#4a5a7a] font-mono">Estimativa fixa</span>
+                      <span className="text-sm font-mono font-semibold text-[#60a5fa]">15.000$–25.000$</span>
+                    </div>
+                }
+              </div>
             </div>}
           </div>
           <div className="flex gap-3">
@@ -305,7 +339,7 @@ function CarCalculator() {
         </div>
       </div>
       <div className="lg:col-span-3" ref={ref}>
-        {!done||!R ? <EmptyState/> : (
+        {!done||!R||!D ? <EmptyState/> : (
           <div className="space-y-4">
             <div className="rounded-2xl border border-[#1e3a6e] bg-gradient-to-br from-[#0b1f40] via-[#0d2d5e]/60 to-[#0a1a35] p-6 result-animate overflow-hidden relative" style={{boxShadow:'0 0 40px rgba(37,99,235,0.08)'}}>
               <div className="absolute top-0 right-0 w-48 h-48 bg-[#1d4ed8]/10 rounded-full blur-2xl -translate-y-1/2 translate-x-1/4 pointer-events-none"/>
@@ -313,8 +347,8 @@ function CarCalculator() {
                 <div className="flex items-start justify-between flex-wrap gap-4">
                   <div>
                     <p className="text-xs font-mono tracking-widest text-[#4a6a9a] uppercase mb-1.5">Custo Total Estimado</p>
-                    <p className="font-display text-4xl font-extrabold text-[#e8f0fe] tracking-tight">{formatUSD(R.totalComDespachanteUSD)}</p>
-                    <p className="font-mono text-lg text-[#a78bfa] mt-1">{formatECVCar(R.totalComDespachante)}</p>
+                    <p className="font-display text-4xl font-extrabold text-[#e8f0fe] tracking-tight">{formatUSD(D.totalComDespachanteUSD)}</p>
+                    <p className="font-mono text-lg text-[#a78bfa] mt-1">{formatECVCar(D.totalComDespachante)}</p>
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <Badge variant="blue"><Car size={10}/>{R.ageYears} anos</Badge>
@@ -322,7 +356,7 @@ function CarCalculator() {
                   </div>
                 </div>
                 <div className="mt-5 grid grid-cols-3 gap-3">
-                  {[{label:'Carro + Envio',v:formatUSD(R.cifUSD),I:Car},{label:'Só Impostos',v:formatUSD(R.totalImpostosUSD),I:Landmark},{label:'Despachante',v:formatUSD(R.despachanteMidUSD),I:FileText}].map((x,i)=>(
+                  {[{label:'Carro + Envio',v:formatUSD(R.cifUSD),I:Car},{label:'Só Impostos',v:formatUSD(R.totalImpostosUSD),I:Landmark},{label:'Despachante',v:formatUSD(D.despachanteMidUSD),I:FileText}].map((x,i)=>(
                     <div key={i} className="rounded-xl bg-[#071530]/60 border border-[#1a2d4a] px-3 py-2.5">
                       <div className="flex items-center gap-1.5 mb-1"><x.I size={10} className="text-[#3b5a9a]"/><span className="text-[10px] font-mono text-[#3b5a9a] uppercase tracking-wider">{x.label}</span></div>
                       <span className="font-mono text-sm font-semibold text-[#93c5fd]">{x.v}</span>
@@ -353,22 +387,22 @@ function CarCalculator() {
                   <ResultRow icon={FileText}   label="Taxa Estatística (TEA)"                                 variant="default" local={formatUSD(R.teaUSD)} ecv={formatECVCar(R.teaECV)} delay={300}/>
                   <SubtotalRow label="Total Impostos" local={formatUSD(R.totalImpostosUSD)} ecv={formatECVCar(R.totalImpostosECV)}/>
                   <SectionLabel n="03">Serviços</SectionLabel>
-                  <ResultRow icon={FileText} label="Honorários do Despachante" note={`${formatECVCar(R.despachanteMinECV)}–${formatECVCar(R.despachanteMidECV*2-R.despachanteMinECV)}`} variant="green" local={formatUSD(R.despachanteMidUSD)} ecv={formatECVCar(R.despachanteMidECV)} delay={350}/>
+                  <ResultRow icon={FileText} label="Honorários do Despachante" note={D.customPct ? `${D.customPct}% do CIF` : `${formatECVCar(D.despachanteMinECV)}–${formatECVCar(D.despachanteMaxECV)}`} variant="green" local={formatUSD(D.despachanteMidUSD)} ecv={formatECVCar(D.despachanteMidECV)} delay={350}/>
                   <div className="mt-4 rounded-xl border border-[#a78bfa]/20 bg-gradient-to-r from-[#1a0d3a]/60 to-[#0a0d1a] px-4 py-4">
                     <div className="flex items-center justify-between">
                       <div><p className="text-xs font-mono text-[#6b4fa0] uppercase tracking-widest">Total Geral</p><p className="text-xs text-[#4a3070] mt-0.5 font-mono">Veículo + Impostos + Despachante</p></div>
-                      <div className="text-right"><p className="font-mono text-base font-bold text-[#a78bfa]">{formatECVCar(R.totalComDespachante)}</p><p className="font-mono text-sm text-[#7c5cbf]">{formatUSD(R.totalComDespachanteUSD)}</p></div>
+                      <div className="text-right"><p className="font-mono text-base font-bold text-[#a78bfa]">{formatECVCar(D.totalComDespachante)}</p><p className="font-mono text-sm text-[#7c5cbf]">{formatUSD(D.totalComDespachanteUSD)}</p></div>
                     </div>
                   </div>
                   <div className="mt-3 flex items-center gap-2 rounded-lg bg-[#0d1117] border border-[#1a2235] px-3 py-2.5">
                     <Info size={12} className="text-[#334155] flex-shrink-0"/>
-                    <p className="text-[11px] text-[#334155]">Impostos: <span className="text-[#f87171] font-semibold">{((R.totalImpostosECV/R.totalComDespachante)*100).toFixed(0)}%</span> do custo total.</p>
+                    <p className="text-[11px] text-[#334155]">Impostos: <span className="text-[#f87171] font-semibold">{((R.totalImpostosECV/D.totalComDespachante)*100).toFixed(0)}%</span> do custo total.</p>
                   </div>
                 </div>}
                 {tab==='chart' && <div className="animate-fade-up">
                   <p className="text-xs font-mono text-[#2d3d55] uppercase tracking-widest mb-5">Distribuição dos Custos</p>
-                  <PieChart segments={chartSegs} totalECV={R.totalComDespachante}/>
-                  <BarBreakdown segments={chartSegs} totalECV={R.totalComDespachante}/>
+                  <PieChart segments={chartSegs} totalECV={D.totalComDespachante}/>
+                  <BarBreakdown segments={chartSegs} totalECV={D.totalComDespachante}/>
                 </div>}
               </div>
             </div>
@@ -390,6 +424,8 @@ function MotoCalculator() {
   const [dispId, setDispId] = useState('small')
   const [useCustomFreight, setUseCustomFreight] = useState(false)
   const [customFreight, setCustomFreight] = useState('')
+  const [useCustomDespachante, setUseCustomDespachante] = useState(false)
+  const [customDespachantePercent, setCustomDespachantePercent] = useState('2')
   const [done, setDone] = useState(false)
   const [tab, setTab] = useState('breakdown')
   const ref = useRef(null)
@@ -407,17 +443,31 @@ function MotoCalculator() {
     return calculateMotoImport({motoValueLocal:mv,freightLocal:null,motoYear,countryCode,displacementId:dispId,customFreight:cf})
   }, [motoValue,motoYear,countryCode,dispId,useCustomFreight,customFreight])
 
+  const D = useMemo(() => {
+    if (!R) return null
+    if (useCustomDespachante) {
+      const pct = parseFloat(customDespachantePercent)
+      if (pct > 0) {
+        const ecv = R.cifECV * (pct / 100)
+        const local = ecv / R.toECV
+        const total = R.totalSemDespachante + ecv
+        return { despachanteMinECV: ecv, despachanteMidECV: ecv, despachanteMaxECV: ecv, despachanteMidLocal: local, totalComDespachante: total, totalComDespachanteLocal: total / R.toECV, customPct: pct }
+      }
+    }
+    return { despachanteMinECV: R.despachanteMinECV, despachanteMidECV: R.despachanteMidECV, despachanteMaxECV: R.despachanteMaxECV, despachanteMidLocal: R.despachanteMidLocal, totalComDespachante: R.totalComDespachante, totalComDespachanteLocal: R.totalComDespachanteLocal, customPct: null }
+  }, [R, useCustomDespachante, customDespachantePercent])
+
   function fmtL(v) { return sym+new Intl.NumberFormat('de-DE').format(Math.round(v)) }
 
   function calc() { if(!R) return; setDone(true); setTimeout(()=>ref.current?.scrollIntoView({behavior:'smooth',block:'start'}),100) }
-  function reset() { setMotoValue('');setMotoYear(CURRENT_YEAR-3);setCountryCode('PT');setDispId('small');setDone(false);setUseCustomFreight(false);setCustomFreight('') }
+  function reset() { setMotoValue('');setMotoYear(CURRENT_YEAR-3);setCountryCode('PT');setDispId('small');setDone(false);setUseCustomFreight(false);setCustomFreight('');setUseCustomDespachante(false);setCustomDespachantePercent('2') }
 
-  const chartSegs = R ? [
+  const chartSegs = R && D ? [
     {label:'Mota + Frete + Seguro', ecv:R.cifECV, color:'#10b981'},
     {label:'Dir. Importação (20%)', ecv:R.diECV, color:'#8b5cf6'},
     {label:`ICE (${segment.label})`, ecv:R.iceECV, color:'#ef4444'},
     {label:'IVA (15%)', ecv:R.ivaECV, color:'#f59e0b'},
-    {label:'TEA + Despachante', ecv:R.teaECV+R.despachanteMidECV, color:'#3b82f6'},
+    {label:'TEA + Despachante', ecv:R.teaECV+D.despachanteMidECV, color:'#3b82f6'},
   ] : []
 
   return (
@@ -518,6 +568,24 @@ function MotoCalculator() {
             <p className="text-[10px] text-[#1e2d45] mt-0.5">{country.currency==='EUR'?'Taxa fixa — indexado ao Euro desde 1999':'Taxa aproximada — pode variar'}</p>
           </div>
 
+          {/* Despachante */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <Label><FileText size={10} className="inline mr-1"/>Honorários Despachante</Label>
+              <button onClick={()=>setUseCustomDespachante(v=>!v)} className={cn('text-[10px] font-mono transition-colors',useCustomDespachante?'text-[#34d399]':'text-[#334155] hover:text-[#4a5a7a]')}>
+                {useCustomDespachante?'← usar estimativa':'% manual →'}
+              </button>
+            </div>
+            {useCustomDespachante
+              ? <><NumberInput id="dpm" value={customDespachantePercent} onChange={e=>setCustomDespachantePercent(e.target.value)} placeholder="2" step={0.1} min={0.1} max={20} suffix="%"/>
+                 <p className="mt-1.5 text-[10px] font-mono text-[#2d3d55]">% aplicada sobre o valor CIF</p></>
+              : <div className="rounded-xl bg-[#07090f] border border-[#1a2235] px-4 py-3 flex items-center justify-between">
+                  <span className="text-xs text-[#4a5a7a] font-mono">Estimativa fixa</span>
+                  <span className="text-sm font-mono font-semibold text-[#34d399]">15.000$–22.000$</span>
+                </div>
+            }
+          </div>
+
           <div className="flex gap-3">
             <button onClick={calc} disabled={!R} className={cn('flex-1 flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-display font-semibold transition-all duration-200', R?'bg-[#10b981] hover:bg-[#059669] text-white shadow-lg shadow-[#10b981]/20 active:scale-95':'bg-[#1a2235] text-[#2d3d55] cursor-not-allowed')}>
               <Calculator size={15}/>Calcular
@@ -539,7 +607,7 @@ function MotoCalculator() {
       </div>
 
       <div className="lg:col-span-3" ref={ref}>
-        {!done||!R ? <EmptyState/> : (
+        {!done||!R||!D ? <EmptyState/> : (
           <div className="space-y-4">
             {/* Hero */}
             <div className="rounded-2xl border border-[#14532d]/60 bg-gradient-to-br from-[#052e16] via-[#064e3b]/50 to-[#07090f] p-6 result-animate overflow-hidden relative" style={{boxShadow:'0 0 40px rgba(16,185,129,0.08)'}}>
@@ -548,8 +616,8 @@ function MotoCalculator() {
                 <div className="flex items-start justify-between flex-wrap gap-4">
                   <div>
                     <p className="text-xs font-mono tracking-widest text-[#166534] uppercase mb-1.5">Custo Total Estimado</p>
-                    <p className="font-display text-4xl font-extrabold text-[#ecfdf5] tracking-tight">{fmtL(R.totalComDespachanteLocal)}</p>
-                    <p className="font-mono text-lg text-[#6ee7b7] mt-1">{formatECV(R.totalComDespachante)}</p>
+                    <p className="font-display text-4xl font-extrabold text-[#ecfdf5] tracking-tight">{fmtL(D.totalComDespachanteLocal)}</p>
+                    <p className="font-mono text-lg text-[#6ee7b7] mt-1">{formatECV(D.totalComDespachante)}</p>
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <Badge variant="green"><Bike size={10}/>{country.flag} {country.name}</Badge>
@@ -558,7 +626,7 @@ function MotoCalculator() {
                   </div>
                 </div>
                 <div className="mt-5 grid grid-cols-3 gap-3">
-                  {[{label:'Mota + Envio',v:fmtL(R.cifLocal),I:Bike},{label:'Só Impostos',v:fmtL(R.totalImpostosLocal),I:Landmark},{label:'Despachante',v:fmtL(R.despachanteMidLocal),I:FileText}].map((x,i)=>(
+                  {[{label:'Mota + Envio',v:fmtL(R.cifLocal),I:Bike},{label:'Só Impostos',v:fmtL(R.totalImpostosLocal),I:Landmark},{label:'Despachante',v:fmtL(D.despachanteMidLocal),I:FileText}].map((x,i)=>(
                     <div key={i} className="rounded-xl bg-[#052e16]/60 border border-[#14532d]/40 px-3 py-2.5">
                       <div className="flex items-center gap-1.5 mb-1"><x.I size={10} className="text-[#166534]"/><span className="text-[10px] font-mono text-[#166534] uppercase tracking-wider">{x.label}</span></div>
                       <span className="font-mono text-sm font-semibold text-[#6ee7b7]">{x.v}</span>
@@ -591,22 +659,22 @@ function MotoCalculator() {
                   <ResultRow icon={FileText}   label="Taxa Estatística (TEA)"                                                     variant="default" local={fmtL(R.teaLocal)}         ecv={formatECV(R.teaECV)} delay={300}/>
                   <SubtotalRow label="Total Impostos" local={fmtL(R.totalImpostosLocal)} ecv={formatECV(R.totalImpostosECV)}/>
                   <SectionLabel n="03">Serviços</SectionLabel>
-                  <ResultRow icon={FileText} label="Honorários Despachante" note={`${formatECV(R.despachanteMinECV)}–${formatECV(R.despachanteMaxECV)}`} variant="green" local={fmtL(R.despachanteMidLocal)} ecv={formatECV(R.despachanteMidECV)} delay={350}/>
+                  <ResultRow icon={FileText} label="Honorários Despachante" note={D.customPct ? `${D.customPct}% do CIF` : `${formatECV(D.despachanteMinECV)}–${formatECV(D.despachanteMaxECV)}`} variant="green" local={fmtL(D.despachanteMidLocal)} ecv={formatECV(D.despachanteMidECV)} delay={350}/>
                   <div className="mt-4 rounded-xl border border-[#10b981]/20 bg-gradient-to-r from-[#052e16]/60 to-[#07090f] px-4 py-4">
                     <div className="flex items-center justify-between">
                       <div><p className="text-xs font-mono text-[#166534] uppercase tracking-widest">Total Geral</p><p className="text-xs text-[#14532d] mt-0.5 font-mono">Mota + Impostos + Despachante</p></div>
-                      <div className="text-right"><p className="font-mono text-base font-bold text-[#34d399]">{formatECV(R.totalComDespachante)}</p><p className="font-mono text-sm text-[#166534]">{fmtL(R.totalComDespachanteLocal)} {country.currency}</p></div>
+                      <div className="text-right"><p className="font-mono text-base font-bold text-[#34d399]">{formatECV(D.totalComDespachante)}</p><p className="font-mono text-sm text-[#166534]">{fmtL(D.totalComDespachanteLocal)} {country.currency}</p></div>
                     </div>
                   </div>
                   <div className="mt-3 flex items-center gap-2 rounded-lg bg-[#0d1117] border border-[#1a2235] px-3 py-2.5">
                     <Info size={12} className="text-[#334155] flex-shrink-0"/>
-                    <p className="text-[11px] text-[#334155]">1 {country.currency} = {R.toECV.toFixed(3)} ECV · Impostos: <span className="text-[#f87171] font-semibold">{((R.totalImpostosECV/R.totalComDespachante)*100).toFixed(0)}%</span> do total</p>
+                    <p className="text-[11px] text-[#334155]">1 {country.currency} = {R.toECV.toFixed(3)} ECV · Impostos: <span className="text-[#f87171] font-semibold">{((R.totalImpostosECV/D.totalComDespachante)*100).toFixed(0)}%</span> do total</p>
                   </div>
                 </div>}
                 {tab==='chart' && <div className="animate-fade-up">
                   <p className="text-xs font-mono text-[#2d3d55] uppercase tracking-widest mb-5">Distribuição dos Custos</p>
-                  <PieChart segments={chartSegs} totalECV={R.totalComDespachante}/>
-                  <BarBreakdown segments={chartSegs} totalECV={R.totalComDespachante}/>
+                  <PieChart segments={chartSegs} totalECV={D.totalComDespachante}/>
+                  <BarBreakdown segments={chartSegs} totalECV={D.totalComDespachante}/>
                 </div>}
               </div>
             </div>
